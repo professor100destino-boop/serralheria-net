@@ -2,6 +2,11 @@ name: Publicar Serralheria Net Seguro
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - secure-v2
+    paths:
+      - deploy-trigger.txt
 
 permissions:
   contents: read
