@@ -37,3 +37,5 @@ jobs:
           git add index.html manifest.webmanifest sw.js icon-192.png icon-512.png icon-maskable-512.png wrangler.jsonc .nojekyll
           git commit -m 'Publicar Serralheria Net' || exit 0
           git push
+
+# publicação inicial
