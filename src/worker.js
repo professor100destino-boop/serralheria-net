@@ -1,6 +1,6 @@
 const COOKIE_NAME = 'snet_session';
 const SESSION_TTL = 8 * 60 * 60;
-const PBKDF2_ITERATIONS = 120000;
+const PBKDF2_ITERATIONS = 20000;
 const encoder = new TextEncoder();
 
 const nowSec = () => Math.floor(Date.now() / 1000);
