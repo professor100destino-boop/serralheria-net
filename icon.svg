@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#15242d"/>
+  <rect x="82" y="82" width="348" height="348" rx="72" fill="#d98b2b"/>
+  <text x="256" y="310" text-anchor="middle" font-family="Arial,sans-serif" font-size="150" font-weight="700" fill="#15242d">SN</text>
+</svg>
