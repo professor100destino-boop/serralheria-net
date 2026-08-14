@@ -90,10 +90,33 @@ async function setup(req, env) {
   const body = await readBody(req); const username = String(body.username || '').trim().toLowerCase(); const password = body.password;
   if (!validUsername(username)) return json({ error: 'invalid_username' }, 400);
   if (!validPassword(password)) return json({ error: 'weak_password' }, 400);
-  const salt = randomSalt(); const hash = await passwordHash(password, salt); const id = crypto.randomUUID(); const n = nowSec();
-  await env.DB.prepare('INSERT INTO users(id,username,password_hash,salt,role,active,created_at,updated_at) VALUES(?,?,?,?,\'admin\',1,?,?)')
-    .bind(id, username, hash, salt, n, n).run();
-  return createSession(id, env);
+
+  let salt, hash, id, n;
+  try {
+    salt = randomSalt();
+    hash = await passwordHash(password, salt);
+    id = crypto.randomUUID();
+    n = nowSec();
+  } catch (err) {
+    console.error('setup_crypto_error', err);
+    return json({ error: 'setup_crypto_error' }, 500);
+  }
+
+  try {
+    await env.DB.prepare("INSERT INTO users(id,username,password_hash,salt,role,active,created_at,updated_at) VALUES(?,?,?,?, 'admin',1,?,?)")
+      .bind(id, username, hash, salt, n, n).run();
+  } catch (err) {
+    console.error('setup_db_error', err);
+    return json({ error: 'setup_db_error' }, 500);
+  }
+
+  try {
+    return await createSession(id, env);
+  } catch (err) {
+    console.error('setup_session_error', err);
+    try { await env.DB.prepare('DELETE FROM users WHERE id=?').bind(id).run(); } catch {}
+    return json({ error: 'setup_session_error' }, 500);
+  }
 }
 async function createSession(userId, env) {
   const token = randomToken(); const tokenHash = await sha256(token); const n = nowSec();
@@ -176,7 +199,7 @@ function loginPage(initialized) {
   const button = initialized ? 'Entrar' : 'Criar administrador';
   return new Response(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>
   *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#15242d;font-family:Segoe UI,Arial,sans-serif;color:#18212b}.box{width:min(420px,92vw);background:#fff;border-radius:18px;padding:30px;box-shadow:0 24px 70px #0006}.brand{font-size:28px;font-weight:800;color:#1f4e5f}.sub{color:#677381;margin:6px 0 24px}.field{margin:14px 0}.field label{display:block;font-size:13px;font-weight:700;margin-bottom:6px}.field input{width:100%;padding:12px;border:1px solid #dfe4e8;border-radius:10px;font-size:16px}.btn{width:100%;border:0;border-radius:10px;padding:13px;background:#d98b2b;color:#15242d;font-weight:800;font-size:16px}.err{min-height:22px;color:#b42318;font-size:13px;margin-top:12px}.note{font-size:12px;color:#677381;margin-top:16px}</style></head><body><main class="box"><div class="brand">Serralheria Net</div><div class="sub">${initialized?'Acesso protegido':'Configure o primeiro usuário administrador'}</div><form id="f"><div class="field"><label>Usuário</label><input id="u" autocomplete="username" required minlength="3"></div><div class="field"><label>Senha</label><input id="p" type="password" autocomplete="${initialized?'current-password':'new-password'}" required minlength="8"></div>${initialized?'':'<div class="note">A senha deve ter pelo menos 8 caracteres.</div>'}<button class="btn">${button}</button><div class="err" id="e"></div></form></main><script>
-  f.onsubmit=async ev=>{ev.preventDefault();e.textContent='';const r=await fetch('${initialized?'/api/login':'/api/setup'}',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:u.value,password:p.value})});const j=await r.json().catch(()=>({}));if(r.ok)location.href='/';else e.textContent=j.error==='temporarily_blocked'?'Muitas tentativas. Tente novamente mais tarde.':j.error==='weak_password'?'Use uma senha com pelo menos 8 caracteres.':j.error==='invalid_username'?'Usuário inválido.':'Usuário ou senha inválidos.'};
+  f.onsubmit=async ev=>{ev.preventDefault();e.textContent='';const r=await fetch('${initialized?'/api/login':'/api/setup'}',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:u.value,password:p.value})});const j=await r.json().catch(()=>({}));if(r.ok){location.href='/';return}if(j.error==='already_initialized'){e.textContent='Administrador já criado. Atualizando…';setTimeout(()=>location.reload(),500);return}const msgs={temporarily_blocked:'Muitas tentativas. Tente novamente mais tarde.',weak_password:'Use uma senha com pelo menos 8 caracteres.',invalid_username:'Usuário inválido.',setup_crypto_error:'Erro ao proteger a senha. Tente novamente.',setup_db_error:'Erro ao gravar o administrador. Tente novamente.',setup_session_error:'Erro ao iniciar a sessão. O administrador não foi mantido; tente novamente.',server_error:'Erro interno no primeiro acesso. Tente novamente.'};e.textContent=msgs[j.error]||(initialized?'Usuário ou senha inválidos.':'Não foi possível criar o administrador.');};
   </script></body></html>`, { headers: { 'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-frame-options':'DENY','content-security-policy':"default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" } });
 }
 
