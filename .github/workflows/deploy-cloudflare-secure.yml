@@ -22,25 +22,38 @@ jobs:
       - name: Baixar código
         uses: actions/checkout@v6
 
-      - name: Validar credenciais
+      - name: Validar credenciais no GitHub
         shell: bash
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || (echo 'Falta CLOUDFLARE_API_TOKEN' && exit 1)
           test -n "$CLOUDFLARE_ACCOUNT_ID" || (echo 'Falta CLOUDFLARE_ACCOUNT_ID' && exit 1)
+
+      - name: Validar token na Cloudflare
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERIFY=$(curl -sS "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json")
+          echo "$VERIFY" | jq '{success,errors,result:{status:(.result.status // null),expires_on:(.result.expires_on // null)}}'
+          echo "$VERIFY" | jq -e '.success == true and .result.status == "active"' >/dev/null || (echo 'TOKEN_CLOUDFLARE_INVALIDO' && exit 1)
 
       - name: Localizar ou criar banco D1
         id: d1
         shell: bash
         run: |
           set -euo pipefail
-          LIST=$(curl -fsS "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database?per_page=100" \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          LIST=$(curl -sS "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database?per_page=100" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json")
+          echo "$LIST" | jq -e '.success == true' >/dev/null || (echo "$LIST" | jq '{success,errors}'; exit 1)
           DB_ID=$(echo "$LIST" | jq -r '.result[] | select(.name=="serralheria-net-db") | .uuid' | head -n1)
           if [ -z "$DB_ID" ] || [ "$DB_ID" = "null" ]; then
-            CREATED=$(curl -fsS "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database" \
+            CREATED=$(curl -sS "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database" \
               -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
               -H "Content-Type: application/json" \
               --data '{"name":"serralheria-net-db","primary_location_hint":"enam"}')
+            echo "$CREATED" | jq -e '.success == true' >/dev/null || (echo "$CREATED" | jq '{success,errors}'; exit 1)
             DB_ID=$(echo "$CREATED" | jq -r '.result.uuid')
           fi
           test -n "$DB_ID" && test "$DB_ID" != "null"
