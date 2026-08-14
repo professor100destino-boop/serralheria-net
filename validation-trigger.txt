@@ -1,0 +1,1 @@
+Validação do backend seguro corrigido em 2026-08-14.
