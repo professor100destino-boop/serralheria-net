@@ -1,0 +1,27 @@
+name: Aplicar correção segura
+
+on:
+  push:
+    branches: [secure-v2]
+    paths:
+      - '.github/workflows/apply-secure-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Corrigir tela administrativa
+        run: python3 scripts/fix-admin-page.py
+      - name: Validar Worker
+        run: node --check src/worker.js
+      - name: Salvar correção
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/worker.js
+          git commit -m 'Corrigir tela administrativa segura' || exit 0
+          git push
