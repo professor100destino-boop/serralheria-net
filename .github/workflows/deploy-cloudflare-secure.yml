@@ -60,6 +60,13 @@ jobs:
           echo "database_id=$DB_ID" >> "$GITHUB_OUTPUT"
           echo "Banco D1 pronto: $DB_ID"
 
+      - name: Preparar assets públicos
+        shell: bash
+        run: |
+          rm -rf deploy-public
+          mkdir deploy-public
+          cp index.html manifest.webmanifest icon.svg sw.js deploy-public/
+
       - name: Gerar configuração de produção
         shell: bash
         env:
@@ -67,12 +74,11 @@ jobs:
         run: |
           cat > wrangler.jsonc <<EOF
           {
-            "$schema": "./node_modules/wrangler/config-schema.json",
             "name": "serralheria-net",
             "main": "src/worker.js",
             "compatibility_date": "2026-08-14",
             "assets": {
-              "directory": ".",
+              "directory": "./deploy-public",
               "binding": "ASSETS",
               "run_worker_first": true
             },
