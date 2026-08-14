@@ -95,5 +95,8 @@ jobs:
       - name: Aplicar estrutura do banco
         run: npx --yes wrangler@latest d1 execute serralheria-net-db --remote --file=./schema.sql
 
+      - name: Diagnóstico do primeiro acesso
+        run: npx --yes wrangler@latest d1 execute serralheria-net-db --remote --command="SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM sessions) AS sessions;"
+
       - name: Publicar Worker
         run: npx --yes wrangler@latest deploy
