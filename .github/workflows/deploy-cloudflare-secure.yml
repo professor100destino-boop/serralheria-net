@@ -100,3 +100,30 @@ jobs:
 
       - name: Publicar Worker
         run: npx --yes wrangler@latest deploy
+
+      - name: Testar criação temporária do administrador
+        shell: bash
+        run: |
+          set +e
+          STATUS=$(curl -sS https://serralheria-net.professor100destino.workers.dev/api/status)
+          INIT=$(echo "$STATUS" | jq -r '.initialized // false')
+          if [ "$INIT" = "true" ]; then
+            echo "Sistema já inicializado; teste temporário não executado."
+            exit 0
+          fi
+          PROBE_USER="snet_probe_$(date +%s)"
+          PROBE_PASS="ProbePass-2026-$(date +%s)!"
+          BODY=$(jq -nc --arg u "$PROBE_USER" --arg p "$PROBE_PASS" '{username:$u,password:$p}')
+          OUT=$(mktemp)
+          CODE=$(curl -sS -o "$OUT" -w "%{http_code}" -X POST \
+            -H "content-type: application/json" \
+            --data "$BODY" \
+            https://serralheria-net.professor100destino.workers.dev/api/setup)
+          echo "HTTP $CODE"
+          jq '{ok,error,user:(.user // null)}' "$OUT" || cat "$OUT"
+          npx --yes wrangler@latest d1 execute serralheria-net-db --remote --command="DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE username LIKE 'snet_probe_%'); DELETE FROM users WHERE username LIKE 'snet_probe_%';" >/dev/null 2>&1
+          if [ "$CODE" != "200" ]; then
+            echo "FALHA_TESTE_PRIMEIRO_ACESSO"
+            exit 1
+          fi
+          echo "TESTE_PRIMEIRO_ACESSO_OK"
