@@ -17,25 +17,53 @@ jobs:
       - name: Baixar repositório
         uses: actions/checkout@v6
 
-      - name: Reconstruir pacote
+      - name: Reconstruir aplicativo
         shell: bash
         run: |
           cat bootstrap/package.b64.part1 bootstrap/package.b64.part2 bootstrap/package.b64.part3 > /tmp/package.b64
           xxd -r -p bootstrap/package.part4.hex >> /tmp/package.b64
           base64 -d /tmp/package.b64 > /tmp/serralheria-net.zip
-          mkdir -p /tmp/serralheria-net
-          unzip -q /tmp/serralheria-net.zip -d /tmp/serralheria-net
-          cp -R /tmp/serralheria-net/public/. .
-          cp /tmp/serralheria-net/wrangler.jsonc ./wrangler.jsonc
+          mkdir -p /tmp/app
+          unzip -q /tmp/serralheria-net.zip 'public/index.html' 'wrangler.jsonc' -d /tmp/app
+          cp /tmp/app/public/index.html ./index.html
+          cp /tmp/app/wrangler.jsonc ./wrangler.jsonc
+          sed -i 's#/icon-192.png#/icon.svg#g; s#/icon-512.png#/icon.svg#g; s#/icon-maskable-512.png#/icon.svg#g' index.html
+          cat > icon.svg <<'SVG'
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+            <rect width="512" height="512" rx="96" fill="#15242d"/>
+            <rect x="82" y="82" width="348" height="348" rx="72" fill="#d98b2b"/>
+            <text x="256" y="310" text-anchor="middle" font-family="Arial,sans-serif" font-size="150" font-weight="700" fill="#15242d">SN</text>
+          </svg>
+          SVG
+          cat > manifest.webmanifest <<'JSON'
+          {
+            "name": "Serralheria Net",
+            "short_name": "Serralheria Net",
+            "description": "Sistema de gestão para serralherias",
+            "start_url": "./",
+            "scope": "./",
+            "display": "standalone",
+            "background_color": "#f4f6f8",
+            "theme_color": "#15242d",
+            "icons": [{"src":"./icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+          }
+          JSON
+          cat > sw.js <<'JS'
+          const CACHE='serralheria-net-v2';
+          const ASSETS=['./','./index.html','./manifest.webmanifest','./icon.svg'];
+          self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting();});
+          self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim();});
+          self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(fetch(e.request).then(r=>{const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));return r;}).catch(()=>caches.match(e.request).then(r=>r||caches.match('./index.html'))));});
+          JS
           touch .nojekyll
 
-      - name: Publicar arquivos no repositório
+      - name: Salvar aplicativo no repositório
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.html manifest.webmanifest sw.js icon-192.png icon-512.png icon-maskable-512.png wrangler.jsonc .nojekyll
+          git add index.html manifest.webmanifest sw.js icon.svg wrangler.jsonc .nojekyll
           git commit -m 'Publicar Serralheria Net' || exit 0
           git push
 
-# publicação inicial
+# reconstrução sem PNG
