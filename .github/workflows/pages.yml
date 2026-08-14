@@ -1,0 +1,37 @@
+name: Publicar Serralheria Net
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'bootstrap/**'
+      - '.github/workflows/bootstrap.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Enviar site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: '.'
+      - name: Publicar
+        id: deployment
+        uses: actions/deploy-pages@v4
