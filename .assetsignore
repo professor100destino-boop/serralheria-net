@@ -1,0 +1,8 @@
+.git*
+.github
+bootstrap
+src
+schema.sql
+wrangler*.jsonc
+README.md
+SECURE-SETUP.md
