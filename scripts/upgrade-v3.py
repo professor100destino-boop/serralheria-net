@@ -93,7 +93,7 @@ worker = replace_between(worker, 'async function getSession(req, env) {', 'async
 
 # First administrator gets full access record.
 needle = """    await env.DB.prepare(\"INSERT INTO users(id,username,password_hash,salt,role,active,created_at,updated_at) VALUES(?,?,?,?, 'admin',1,?,?)\")\n      .bind(id, username, hash, salt, n, n).run();"""
-repl = needle + "\n    await env.DB.prepare('INSERT OR REPLACE INTO user_access(user_id,profile,permissions,employee_id,own_jobs_only,updated_at) VALUES(?,\'admin\',?,NULL,0,?)').bind(id,JSON.stringify(ALL_MODULES),n).run();"
+repl = needle + '\n    await env.DB.prepare("INSERT OR REPLACE INTO user_access(user_id,profile,permissions,employee_id,own_jobs_only,updated_at) VALUES(?,\'admin\',?,NULL,0,?)").bind(id,JSON.stringify(ALL_MODULES),n).run();'
 if needle in worker and 'INSERT OR REPLACE INTO user_access' not in worker[worker.index(needle):worker.index(needle)+700]: worker=worker.replace(needle,repl)
 
 worker = replace_between(worker, 'async function createSession(userId, env) {', 'async function login(req, env) {', """async function createSession(userId, env) {
@@ -181,10 +181,7 @@ async function patchUser(req, env, actor, id) {
   return json({ ok: true });
 }
 
-function esc(""")
-
-# Restore function esc signature after replacement marker was consumed.
-worker = worker.replace('function esc(s=\'\') {', 'function esc(s=\'\') {', 1)
+""")
 
 # Replace injectScript with access-aware injector.
 worker = replace_between(worker, 'function injectScript(state, user) {', 'export default {', """function injectScript(state, user) {

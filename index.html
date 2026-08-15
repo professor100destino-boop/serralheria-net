@@ -327,7 +327,7 @@ tr:last-child td{border-bottom:0}
           </div>
           <div class="card">
             <h2 style="font-size:17px;margin-top:0">Backup dos dados</h2>
-            <p class="muted">Esta versão salva os dados no próprio navegador. Faça backup regularmente.</p>
+            <p class="muted">Os dados principais são sincronizados no banco online. O backup continua disponível como cópia de segurança.</p>
             <div class="toolbar"><button class="btn primary" onclick="exportData()">Exportar backup</button><label class="btn" style="display:inline-block;color:var(--text)">Importar backup<input type="file" accept=".json" onchange="importData(event)" style="display:none"></label><button class="btn danger" onclick="resetData()">Apagar dados</button></div>
           </div>
         </div>
@@ -393,9 +393,29 @@ function badgeStatus(s){
  return `<span class="badge ${ok.includes(s)?'ok':warn.includes(s)?'warn':bad.includes(s)?'danger':'info'}">${esc(s)}</span>`
 }
 const titles={dashboard:'Dashboard',clientes:'Clientes',visitas:'Visitas e Medidas',orcamentos:'Orçamentos',servicos:'Produtos e Serviços',producao:'Produção / Ordens de Serviço',materiaisos:'Materiais por OS',corte:'Otimizador de Corte',agenda:'Agenda / Instalações',garantias:'Garantias',estoque:'Estoque',compras:'Compras / Fornecedores',pdv:'Caixa / Vendas',receber:'Contas a Receber',pagar:'Contas a Pagar',caixa:'Fluxo de Caixa',relatorios:'Relatórios',config:'Configurações'};
+const accessProfiles={
+ loja:['dashboard','clientes','visitas','orcamentos','servicos','producao','materiaisos','corte','agenda','garantias','estoque','compras','pdv','receber','pagar','caixa','relatorios'],
+ vendedor:['dashboard','clientes','visitas','orcamentos','servicos','agenda','pdv'],
+ serralheiro:['dashboard','producao','materiaisos','corte','agenda','garantias'], custom:['dashboard']
+};
+const profileLabels={admin:'Administrador',loja:'Loja',vendedor:'Vendedor',serralheiro:'Serralheiro',custom:'Personalizado'};
+function currentAccess(){return window.__SNET_USER__||{role:'admin',profile:'admin',permissions:Object.keys(titles),employeeId:'',ownJobsOnly:false}}
+function canAccess(id){let u=currentAccess();return u.role==='admin'||(u.permissions||[]).includes(id)}
+function employeeName(id){return db.employees.find(x=>x.id===id)?.name||''}
+function applyAccessUI(){
+ const u=currentAccess();document.querySelectorAll('.nav-btn[data-page]').forEach(b=>b.style.display=canAccess(b.dataset.page)?'flex':'none');
+ document.querySelectorAll('.nav-title').forEach(t=>{let n=t.nextElementSibling,show=false;while(n&&!n.classList.contains('nav-title')){if(n.classList?.contains('nav-btn')&&n.style.display!=='none')show=true;n=n.nextElementSibling}t.style.display=show?'block':'none'});
+ const qa=document.querySelector('.top-actions');if(qa){qa.querySelectorAll('button').forEach((b,i)=>b.style.display=(i===0?canAccess('orcamentos'):canAccess('pdv'))?'inline-block':'none')}
+ const alert=document.querySelector('#dashboard .alert');if(alert&&u.role!=='admin')alert.innerHTML='<strong>'+profileLabels[u.profile]+'</strong> — '+(u.profile==='serralheiro'?'acompanhe somente os serviços atribuídos a você e atualize o andamento da produção.':u.profile==='vendedor'?'acompanhe clientes, visitas, propostas e vendas permitidas ao seu perfil.':'acesso configurado conforme suas permissões.');
+ if(u.profile==='serralheiro'||u.profile==='vendedor'){let f=document.getElementById('dashFinance')?.closest('.card');if(f)f.style.display='none';let s=document.getElementById('dashStock')?.closest('.card');if(s)s.style.display='none'}
+ if(u.profile==='serralheiro'){let h=document.querySelector('#dashboard .section-title h2');if(h)h.textContent='Meus serviços em andamento'}
+ let active=document.querySelector('.page.active');if(active&&!canAccess(active.id)){let first=[...document.querySelectorAll('.nav-btn[data-page]')].find(b=>b.style.display!=='none');if(first)go(first.dataset.page)}
+}
+
 document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>go(b.dataset.page)));
 document.getElementById('mobileMenu').onclick=()=>document.getElementById('sidebar').classList.toggle('open');
 function go(id){
+ if(!canAccess(id)){let first=[...document.querySelectorAll('.nav-btn[data-page]')].find(b=>canAccess(b.dataset.page));if(first&&first.dataset.page!==id)return go(first.dataset.page);return}
  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
  document.getElementById(id).classList.add('active');
  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.page===id));
@@ -476,7 +496,7 @@ function openBudget(id=''){
 function saveBudget(e,id){e.preventDefault();let f=Object.fromEntries(new FormData(e.target));['material','labor','extra','margin'].forEach(k=>f[k]=+f[k]);let cost=f.material+f.labor+f.extra;f.total=cost*(1+f.margin/100);if(id)Object.assign(db.budgets.find(x=>x.id===id),f);else db.budgets.push({id:uid('b'),...f});closeModal();save()}
 function approveBudget(id){
  let b=db.budgets.find(x=>x.id===id); if(!b)return;b.status='Aprovado';
- if(!db.jobs.some(j=>j.budgetId===id)){db.jobs.push({id:uid('os'),number:'OS-'+String(db.jobs.length+1).padStart(4,'0'),budgetId:id,clientId:b.clientId,title:b.title,value:b.total,cost:b.material+b.labor+b.extra,status:'Aguardando material',deadline:'',responsible:'',progress:10})}
+ if(!db.jobs.some(j=>j.budgetId===id)){db.jobs.push({id:uid('os'),number:'OS-'+String(db.jobs.length+1).padStart(4,'0'),budgetId:id,clientId:b.clientId,title:b.title,value:b.total,cost:b.material+b.labor+b.extra,status:'Aguardando material',deadline:'',responsible:'',assignedEmployeeId:'',progress:10,workNotes:''})}
  if(!db.receivables.some(r=>r.sourceId===id)){db.receivables.push({id:uid('r'),sourceId:id,clientId:b.clientId,desc:'Orçamento '+b.number+' - '+b.title,value:b.total,due:b.validUntil,status:'Pendente'})}
  save()
 }
@@ -489,7 +509,7 @@ function renderBudgets(){
  let a=db.budgets.filter(x=>(x.number+' '+x.title+' '+clientName(x.clientId)).toLowerCase().includes(q)&&(!f||x.status===f));
  document.getElementById('budgetRows').innerHTML=a.slice().reverse().map(x=>`<tr><td class="mono">${esc(x.number)}</td><td>${esc(clientName(x.clientId))}</td><td>${esc(x.title)}</td><td><strong>${money(x.total)}</strong></td><td>${dateBR(x.validUntil)}</td><td>${badgeStatus(x.status)}</td><td><button class="btn small" onclick="budgetDoc('${x.id}')">Ver</button> <button class="btn small" onclick="openBudget('${x.id}')">Editar</button> <button class="btn small" onclick="sendBudgetWhatsApp('${x.id}')">WhatsApp</button> ${x.status!=='Aprovado'?`<button class="btn small primary" onclick="approveBudget('${x.id}')">Aprovar → OS</button>`:`<button class="btn small primary" onclick="installmentsBudget('${x.id}')">Parcelar</button>`}</td></tr>`).join('')||'<tr><td colspan="7" class="muted">Nenhum orçamento.</td></tr>'
 }
-function quickNewBudget(){go('orcamentos');openBudget()}
+function quickNewBudget(){if(!canAccess('orcamentos'))return alert('Seu perfil não possui acesso a Orçamentos.');go('orcamentos');openBudget()}
 
 function sendBudgetWhatsApp(id){
  let b=db.budgets.find(x=>x.id===id),c=db.clients.find(x=>x.id===b?.clientId);if(!b)return;
@@ -516,20 +536,15 @@ function installmentsBudget(id){
 
 // PRODUÇÃO / OS
 function openJob(id=''){
- let x=db.jobs.find(a=>a.id===id)||{id:'',number:'OS-'+String(db.jobs.length+1).padStart(4,'0'),budgetId:'',clientId:'',title:'',value:0,cost:0,status:'Aguardando material',deadline:'',responsible:'',progress:10};
- openModal(id?'Editar OS':'Nova Ordem de Serviço',`<form onsubmit="saveJob(event,'${x.id}')"><div class="form-grid">
- <div class="field w3"><label>Número</label><input name="number" value="${esc(x.number)}" required></div>
- <div class="field w6"><label>Cliente</label><select name="clientId" required>${opts(db.clients,x.clientId)}</select></div>
- <div class="field w3"><label>Prazo</label><input type="date" name="deadline" value="${x.deadline}"></div>
- <div class="field w12"><label>Serviço</label><input name="title" value="${esc(x.title)}" required></div>
- <div class="field w3"><label>Valor vendido</label><input type="number" step=".01" name="value" value="${x.value}"></div>
- <div class="field w3"><label>Custo estimado</label><input type="number" step=".01" name="cost" value="${x.cost}"></div>
- <div class="field w3"><label>Responsável</label><input name="responsible" value="${esc(x.responsible)}"></div>
- <div class="field w3"><label>Progresso %</label><input type="number" min="0" max="100" name="progress" value="${x.progress}"></div>
- <div class="field w6"><label>Etapa</label><select name="status">${['Aguardando material','Corte / Preparação','Soldagem / Montagem','Pintura / Acabamento','Pronto para instalar','Concluído'].map(s=>`<option ${s===x.status?'selected':''}>${s}</option>`)}</select></div>
- <div class="field w12 right"><button class="btn primary">Salvar OS</button></div></div></form>`)
+ let x=db.jobs.find(a=>a.id===id)||{id:'',number:'OS-'+String(db.jobs.length+1).padStart(4,'0'),budgetId:'',clientId:'',title:'',value:0,cost:0,status:'Aguardando material',deadline:'',responsible:'',assignedEmployeeId:'',progress:10,workNotes:''};
+ let u=currentAccess();
+ if(u.profile==='serralheiro'){
+  openModal('Atualizar meu serviço',`<form onsubmit="saveJob(event,'${x.id}')"><div class="form-grid"><div class="field w4"><label>OS</label><input value="${esc(x.number)}" disabled></div><div class="field w8"><label>Cliente / Serviço</label><input value="${esc(clientName(x.clientId)+' - '+x.title)}" disabled></div><div class="field w4"><label>Prazo</label><input type="date" name="deadline" value="${x.deadline}"></div><div class="field w4"><label>Progresso %</label><input type="number" min="0" max="100" name="progress" value="${x.progress||0}"></div><div class="field w4"><label>Etapa</label><select name="status">${['Aguardando material','Corte / Preparação','Soldagem / Montagem','Pintura / Acabamento','Pronto para instalar','Concluído'].map(s=>`<option ${s===x.status?'selected':''}>${s}</option>`)}</select></div><div class="field w12"><label>Observações do serviço</label><textarea name="workNotes" placeholder="Informe andamento, dificuldade, material faltante ou observação para a loja">${esc(x.workNotes||'')}</textarea></div><div class="field w12 right"><button class="btn primary">Atualizar serviço</button></div></div></form>`);return;
+ }
+ let team=db.employees.filter(e=>e.active!==false);let empOpts='<option value="">Sem responsável</option>'+team.map(e=>`<option value="${e.id}" ${e.id===x.assignedEmployeeId?'selected':''}>${esc(e.name+' - '+e.role)}</option>`).join('');
+ openModal(id?'Editar OS':'Nova Ordem de Serviço',`<form onsubmit="saveJob(event,'${x.id}')"><div class="form-grid"><div class="field w3"><label>Número</label><input name="number" value="${esc(x.number)}" required></div><div class="field w6"><label>Cliente</label><select name="clientId" required>${opts(db.clients,x.clientId)}</select></div><div class="field w3"><label>Prazo</label><input type="date" name="deadline" value="${x.deadline}"></div><div class="field w12"><label>Serviço</label><input name="title" value="${esc(x.title)}" required></div><div class="field w3"><label>Valor vendido</label><input type="number" step=".01" name="value" value="${x.value}"></div><div class="field w3"><label>Custo estimado</label><input type="number" step=".01" name="cost" value="${x.cost}"></div><div class="field w3"><label>Responsável</label><select name="assignedEmployeeId">${empOpts}</select></div><div class="field w3"><label>Progresso %</label><input type="number" min="0" max="100" name="progress" value="${x.progress}"></div><div class="field w6"><label>Etapa</label><select name="status">${['Aguardando material','Corte / Preparação','Soldagem / Montagem','Pintura / Acabamento','Pronto para instalar','Concluído'].map(s=>`<option ${s===x.status?'selected':''}>${s}</option>`)}</select></div><div class="field w12"><label>Observações internas da OS</label><textarea name="workNotes">${esc(x.workNotes||'')}</textarea></div><div class="field w12 right"><button class="btn primary">Salvar OS</button></div></div></form>`)
 }
-function saveJob(e,id){e.preventDefault();let f=Object.fromEntries(new FormData(e.target));f.value=+f.value;f.cost=+f.cost;f.progress=+f.progress;if(id)Object.assign(db.jobs.find(x=>x.id===id),f);else db.jobs.push({id:uid('os'),budgetId:'',...f});closeModal();save()}
+function saveJob(e,id){e.preventDefault();let f=Object.fromEntries(new FormData(e.target)),x=id?db.jobs.find(x=>x.id===id):null;if('value'in f)f.value=+f.value;if('cost'in f)f.cost=+f.cost;if('progress'in f)f.progress=+f.progress;if('assignedEmployeeId'in f)f.responsible=employeeName(f.assignedEmployeeId);if(x)Object.assign(x,f);else db.jobs.push({id:uid('os'),budgetId:'',...f});closeModal();save()}
 function renderJobs(){
  let stages=['Aguardando material','Corte / Preparação','Soldagem / Montagem','Pintura / Acabamento','Pronto para instalar'];
  document.getElementById('pipeline').innerHTML=stages.map(s=>`<div class="col"><h3>${s} (${db.jobs.filter(j=>j.status===s).length})</h3>${db.jobs.filter(j=>j.status===s).map(j=>`<div class="job"><strong>${esc(j.number)} · ${esc(clientName(j.clientId))}</strong><small>${esc(j.title)}</small><div class="bar" style="margin:8px 0"><span style="width:${Math.min(100,j.progress||0)}%"></span></div><small>Prazo: ${dateBR(j.deadline)} · ${money(j.value)}</small><div style="margin-top:8px"><button class="btn small" onclick="openJob('${j.id}')">Atualizar</button> <button class="btn small" onclick="printJob('${j.id}')">OS</button> <button class="btn small" onclick="goJobMaterials('${j.id}')">Materiais</button></div></div>`).join('')}</div>`).join('')
@@ -541,7 +556,7 @@ function printJob(id){
  let j=db.jobs.find(x=>x.id===id),c=db.clients.find(x=>x.id===j?.clientId);if(!j)return;
  let mats=db.jobMaterials.filter(m=>m.jobId===id);
  let matRows=mats.map(m=>`<tr><td>${esc(db.stock.find(s=>s.id===m.stockId)?.name||m.name||'')}</td><td>${m.qty}</td><td>${money(m.unitCost)}</td><td>${money(m.qty*m.unitCost)}</td><td>${esc(m.status)}</td></tr>`).join('');
- openModal('Ordem de Serviço '+j.number,`<div><h2>${esc(db.config.name)}</h2><div class="muted">${esc(db.config.phone)} · ${esc(db.config.address)}</div><div class="hr"></div><h3>${esc(j.number)} — ORDEM DE SERVIÇO</h3><p><strong>Cliente:</strong> ${esc(c?.name||'')}<br><strong>Telefone:</strong> ${esc(c?.phone||'')}<br><strong>Serviço:</strong> ${esc(j.title)}<br><strong>Responsável:</strong> ${esc(j.responsible)}<br><strong>Prazo:</strong> ${dateBR(j.deadline)}<br><strong>Etapa:</strong> ${esc(j.status)}</p><h3>Materiais</h3><div class="table-wrap"><table><thead><tr><th>Material</th><th>Qtd.</th><th>Custo unit.</th><th>Total</th><th>Status</th></tr></thead><tbody>${matRows||'<tr><td colspan="5">Sem materiais vinculados.</td></tr>'}</tbody></table></div><div class="hr"></div><p><strong>Valor vendido:</strong> ${money(j.value)} &nbsp; <strong>Custo estimado:</strong> ${money(j.cost)}</p><p style="margin-top:50px">____________________________________<br>Assinatura do cliente</p></div><div class="right no-print"><button class="btn primary" onclick="window.print()">Imprimir / Salvar PDF</button></div>`)
+ openModal('Ordem de Serviço '+j.number,`<div><h2>${esc(db.config.name)}</h2><div class="muted">${esc(db.config.phone)} · ${esc(db.config.address)}</div><div class="hr"></div><h3>${esc(j.number)} — ORDEM DE SERVIÇO</h3><p><strong>Cliente:</strong> ${esc(c?.name||'')}<br><strong>Telefone:</strong> ${esc(c?.phone||'')}<br><strong>Serviço:</strong> ${esc(j.title)}<br><strong>Responsável:</strong> ${esc(j.responsible)}<br><strong>Prazo:</strong> ${dateBR(j.deadline)}<br><strong>Etapa:</strong> ${esc(j.status)}</p><h3>Materiais</h3><div class="table-wrap"><table><thead><tr><th>Material</th><th>Qtd.</th><th>Custo unit.</th><th>Total</th><th>Status</th></tr></thead><tbody>${matRows||'<tr><td colspan="5">Sem materiais vinculados.</td></tr>'}</tbody></table></div>${(canAccess('orcamentos')||canAccess('relatorios'))?`<div class="hr"></div><p><strong>Valor vendido:</strong> ${money(j.value)} &nbsp; <strong>Custo estimado:</strong> ${money(j.cost)}</p>`:''}<p style="margin-top:50px">____________________________________<br>Assinatura do cliente</p></div><div class="right no-print"><button class="btn primary" onclick="window.print()">Imprimir / Salvar PDF</button></div>`)
 }
 
 // MATERIAIS POR OS
@@ -631,14 +646,21 @@ function renderWarranties(){
  let now=today(); document.getElementById('warrantyRows').innerHTML=db.warranties.map(x=>{let st=x.status==='Ativa'&&x.end<now?'Vencida':x.status,j=db.jobs.find(a=>a.id===x.jobId);return `<tr><td>${esc(clientName(x.clientId))}</td><td>${esc(j?.number||'-')}</td><td>${esc(x.service)}</td><td>${dateBR(x.start)}</td><td>${dateBR(x.end)}</td><td>${badgeStatus(st)}</td><td>${esc(x.notes)}</td><td><button class="btn small" onclick="openWarranty('${x.id}')">Editar</button></td></tr>`}).join('')||'<tr><td colspan="8" class="muted">Nenhuma garantia cadastrada.</td></tr>'
 }
 
-// EQUIPE
+// EQUIPE / ACESSOS
+function employeePermissionChecks(selected=[]){return Object.entries(titles).map(([k,v])=>`<label style="display:flex;gap:7px;align-items:center;border:1px solid var(--border);padding:8px;border-radius:8px"><input style="width:auto" type="checkbox" name="perm" value="${k}" ${selected.includes(k)?'checked':''} onchange="document.getElementById('empProfile').value='custom'"> ${esc(v)}</label>`).join('')}
+function applyEmployeePreset(){let p=document.getElementById('empProfile')?.value;if(!p||p==='custom')return;let set=new Set(accessProfiles[p]||[]);document.querySelectorAll('input[name="perm"]').forEach(c=>c.checked=set.has(c.value));let own=document.getElementById('empOwnJobs');if(own&&p==='serralheiro')own.value='true'}
 function openEmployee(id=''){
- let x=db.employees.find(a=>a.id===id)||{id:'',name:'',role:'Serralheiro',phone:'',commission:0,active:true};
- openModal(id?'Editar funcionário':'Novo funcionário',`<form onsubmit="saveEmployee(event,'${x.id}')"><div class="form-grid"><div class="field w6"><label>Nome</label><input name="name" required value="${esc(x.name)}"></div><div class="field w6"><label>Função</label><input name="role" value="${esc(x.role)}"></div><div class="field w4"><label>Telefone</label><input name="phone" value="${esc(x.phone)}"></div><div class="field w4"><label>Comissão padrão (%)</label><input type="number" step=".01" name="commission" value="${x.commission||0}"></div><div class="field w4"><label>Status</label><select name="active"><option value="true" ${x.active!==false?'selected':''}>Ativo</option><option value="false" ${x.active===false?'selected':''}>Inativo</option></select></div><div class="field w12 right"><button class="btn primary">Salvar</button></div></div></form>`)
+ let x=db.employees.find(a=>a.id===id)||{id:'',name:'',role:'Serralheiro',phone:'',commission:0,active:true,userId:'',username:'',profile:'serralheiro',permissions:accessProfiles.serralheiro,ownJobsOnly:true,accessEnabled:false};
+ let selected=Array.isArray(x.permissions)?x.permissions:(accessProfiles[x.profile]||['dashboard']);
+ openModal(id?'Editar funcionário e acesso':'Novo funcionário e acesso',`<form onsubmit="saveEmployee(event,'${x.id}')"><div class="form-grid"><div class="field w6"><label>Nome</label><input name="name" required value="${esc(x.name)}"></div><div class="field w6"><label>Função</label><select name="role"><option ${x.role==='Serralheiro'?'selected':''}>Serralheiro</option><option ${x.role==='Vendedor'?'selected':''}>Vendedor</option><option ${x.role==='Atendente'?'selected':''}>Atendente</option><option ${x.role==='Gerente'?'selected':''}>Gerente</option><option ${!['Serralheiro','Vendedor','Atendente','Gerente'].includes(x.role)?'selected':''}>Outro</option></select></div><div class="field w4"><label>Telefone</label><input name="phone" value="${esc(x.phone)}"></div><div class="field w4"><label>Comissão padrão (%)</label><input type="number" step=".01" name="commission" value="${x.commission||0}"></div><div class="field w4"><label>Status</label><select name="active"><option value="true" ${x.active!==false?'selected':''}>Ativo</option><option value="false" ${x.active===false?'selected':''}>Inativo</option></select></div><div class="field w12"><div class="hr"></div><h3 style="margin:0 0 8px">Acesso ao Serralheria Net</h3></div><div class="field w4"><label>Permitir login?</label><select name="accessEnabled"><option value="true" ${(x.accessEnabled||x.userId)?'selected':''}>Sim</option><option value="false" ${!(x.accessEnabled||x.userId)?'selected':''}>Não</option></select></div><div class="field w4"><label>Usuário</label><input name="username" value="${esc(x.username||'')}" ${x.userId?'readonly':''} placeholder="ex.: joao"></div><div class="field w4"><label>${x.userId?'Nova senha (opcional)':'Senha (mín. 8)'}</label><input type="password" name="password" minlength="8" autocomplete="new-password"></div><div class="field w4"><label>Perfil de acesso</label><select name="profile" id="empProfile" onchange="applyEmployeePreset()"><option value="loja" ${x.profile==='loja'?'selected':''}>Loja</option><option value="vendedor" ${x.profile==='vendedor'?'selected':''}>Vendedor</option><option value="serralheiro" ${x.profile==='serralheiro'?'selected':''}>Serralheiro</option><option value="custom" ${x.profile==='custom'?'selected':''}>Personalizado</option></select></div><div class="field w4"><label>OS visíveis</label><select name="ownJobsOnly" id="empOwnJobs"><option value="false" ${!x.ownJobsOnly?'selected':''}>Todas permitidas</option><option value="true" ${x.ownJobsOnly?'selected':''}>Somente atribuídas a ele</option></select></div><div class="field w12"><label>Módulos liberados</label><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:7px">${employeePermissionChecks(selected)}</div></div><div class="field w12 right"><button class="btn primary">Salvar funcionário e acesso</button></div></div></form>`)
 }
-function saveEmployee(e,id){e.preventDefault();let f=Object.fromEntries(new FormData(e.target));f.commission=+f.commission;f.active=f.active==='true';if(id)Object.assign(db.employees.find(x=>x.id===id),f);else db.employees.push({id:uid('emp'),...f});closeModal();save()}
-function renderEmployees(){let el=document.getElementById('employeeList');if(!el)return;el.innerHTML=db.employees.map(x=>`<div class="list-item"><strong>${esc(x.name)}</strong><div class="muted">${esc(x.role)} · ${esc(x.phone)} · Comissão ${x.commission||0}% · ${x.active!==false?'Ativo':'Inativo'}</div><button class="btn small" style="margin-top:6px" onclick="openEmployee('${x.id}')">Editar</button></div>`).join('')||'<div class="muted">Nenhum funcionário cadastrado.</div>'}
-
+async function saveEmployee(e,id){
+ e.preventDefault();let form=e.target,fd=new FormData(form),empId=id||uid('emp'),old=id?db.employees.find(x=>x.id===id):null;let permissions=[...form.querySelectorAll('input[name="perm"]:checked')].map(x=>x.value);let f={id:empId,name:fd.get('name'),role:fd.get('role'),phone:fd.get('phone'),commission:+fd.get('commission')||0,active:fd.get('active')==='true',accessEnabled:fd.get('accessEnabled')==='true',username:String(fd.get('username')||'').trim().toLowerCase(),profile:fd.get('profile'),permissions,ownJobsOnly:fd.get('ownJobsOnly')==='true',userId:old?.userId||''};
+ if(f.accessEnabled){if(!f.username)return alert('Informe o usuário de acesso.');let payload={role:'employee',active:f.active,profile:f.profile,permissions:f.permissions,employeeId:empId,ownJobsOnly:f.ownJobsOnly};let pass=String(fd.get('password')||'');if(pass)payload.password=pass;if(f.userId){let r=await fetch('/api/users/'+encodeURIComponent(f.userId),{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});if(!r.ok)return alert('Não foi possível atualizar o acesso: '+((await r.json()).error||'erro'));}else{if(pass.length<8)return alert('Para o primeiro acesso informe uma senha com pelo menos 8 caracteres.');payload.username=f.username;let r=await fetch('/api/users',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}),j=await r.json();if(!r.ok)return alert('Não foi possível criar o usuário: '+(j.error||'erro'));f.userId=j.id;}}
+ else if(f.userId){await fetch('/api/users/'+encodeURIComponent(f.userId),{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({active:false,employeeId:empId,profile:f.profile,permissions:f.permissions,ownJobsOnly:f.ownJobsOnly})})}
+ if(old)Object.assign(old,f);else db.employees.push(f);closeModal();save()
+}
+function renderEmployees(){let el=document.getElementById('employeeList');if(!el)return;el.innerHTML=db.employees.map(x=>`<div class="list-item"><strong>${esc(x.name)}</strong> <span class="badge ${x.active!==false?'ok':'danger'}">${x.active!==false?'Ativo':'Inativo'}</span><div class="muted">${esc(x.role)} · ${esc(x.phone)} · Comissão ${x.commission||0}%</div><div style="margin-top:5px">${x.userId?`<span class="badge info">Login: ${esc(x.username)}</span> <span class="badge">${esc(profileLabels[x.profile]||'Personalizado')}</span> ${x.ownJobsOnly?'<span class="badge warn">Somente próprias OS</span>':''}`:'<span class="badge">Sem acesso ao sistema</span>'}</div><button class="btn small" style="margin-top:7px" onclick="openEmployee('${x.id}')">Editar dados e acesso</button></div>`).join('')||'<div class="muted">Nenhum funcionário cadastrado.</div>'}
 
 // ESTOQUE
 function openStock(id=''){
@@ -688,7 +710,7 @@ function addSale(){
  else db.cash.push({id:uid('cx'),date:today(),type:'Entrada',desc:'Venda - '+item.name,method:pay,value:total});
  save()
 }
-function quickNewSale(){go('pdv')}
+function quickNewSale(){if(!canAccess('pdv'))return alert('Seu perfil não possui acesso ao Caixa/Vendas.');go('pdv')}
 function renderSales(){
  document.getElementById('saleClient').innerHTML=opts(db.clients,'','Consumidor não identificado');
  document.getElementById('saleItem').innerHTML=opts(db.catalog,'','Selecione');
@@ -749,7 +771,7 @@ function resetData(){if(confirm('Apagar todos os dados e voltar ao padrão?')){d
 // RENDER GLOBAL
 function renderAll(){
  document.getElementById('brandName').textContent=db.config.name||'Serralheria Net';
- renderClients();renderVisits();renderCatalog();renderBudgets();renderJobs();renderJobMaterials();renderSchedule();renderWarranties();renderStock();renderPurchases();renderSales();renderFinanceTables();renderCash();renderDashboard();renderReports();renderEmployees();calcPrice();
+ renderClients();renderVisits();renderCatalog();renderBudgets();renderJobs();renderJobMaterials();renderSchedule();renderWarranties();renderStock();renderPurchases();renderSales();renderFinanceTables();renderCash();renderDashboard();renderReports();renderEmployees();calcPrice();applyAccessUI();
 }
 renderAll();
 </script>

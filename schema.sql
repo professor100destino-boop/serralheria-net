@@ -36,3 +36,15 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
+
+
+CREATE TABLE IF NOT EXISTS user_access (
+  user_id TEXT PRIMARY KEY,
+  profile TEXT NOT NULL DEFAULT 'custom',
+  permissions TEXT NOT NULL DEFAULT '[]',
+  employee_id TEXT,
+  own_jobs_only INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_user_access_employee ON user_access(employee_id);
