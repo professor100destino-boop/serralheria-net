@@ -1,0 +1,129 @@
+name: Publicar Serralheria Net Seguro
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - secure-v2
+    paths:
+      - deploy-trigger.txt
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v6
+
+      - name: Validar credenciais no GitHub
+        shell: bash
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || (echo 'Falta CLOUDFLARE_API_TOKEN' && exit 1)
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || (echo 'Falta CLOUDFLARE_ACCOUNT_ID' && exit 1)
+
+      - name: Validar token na Cloudflare
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERIFY=$(curl -sS "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json")
+          echo "$VERIFY" | jq '{success,errors,result:{status:(.result.status // null),expires_on:(.result.expires_on // null)}}'
+          echo "$VERIFY" | jq -e '.success == true and .result.status == "active"' >/dev/null || (echo 'TOKEN_CLOUDFLARE_INVALIDO' && exit 1)
+
+      - name: Localizar ou criar banco D1
+        id: d1
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIST=$(curl -sS "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database?per_page=100" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json")
+          echo "$LIST" | jq -e '.success == true' >/dev/null || (echo "$LIST" | jq '{success,errors}'; exit 1)
+          DB_ID=$(echo "$LIST" | jq -r '.result[] | select(.name=="serralheria-net-db") | .uuid' | head -n1)
+          if [ -z "$DB_ID" ] || [ "$DB_ID" = "null" ]; then
+            CREATED=$(curl -sS "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data '{"name":"serralheria-net-db","primary_location_hint":"enam"}')
+            echo "$CREATED" | jq -e '.success == true' >/dev/null || (echo "$CREATED" | jq '{success,errors}'; exit 1)
+            DB_ID=$(echo "$CREATED" | jq -r '.result.uuid')
+          fi
+          test -n "$DB_ID" && test "$DB_ID" != "null"
+          echo "database_id=$DB_ID" >> "$GITHUB_OUTPUT"
+          echo "Banco D1 pronto: $DB_ID"
+
+      - name: Preparar assets públicos
+        shell: bash
+        run: |
+          rm -rf deploy-public
+          mkdir deploy-public
+          cp index.html manifest.webmanifest icon.svg sw.js deploy-public/
+
+      - name: Gerar configuração de produção
+        shell: bash
+        env:
+          DB_ID: ${{ steps.d1.outputs.database_id }}
+        run: |
+          cat > wrangler.jsonc <<EOF
+          {
+            "name": "serralheria-net",
+            "main": "src/worker.js",
+            "compatibility_date": "2026-08-14",
+            "assets": {
+              "directory": "./deploy-public",
+              "binding": "ASSETS",
+              "run_worker_first": true
+            },
+            "d1_databases": [
+              {
+                "binding": "DB",
+                "database_name": "serralheria-net-db",
+                "database_id": "$DB_ID"
+              }
+            ]
+          }
+          EOF
+
+      - name: Aplicar estrutura do banco
+        run: npx --yes wrangler@latest d1 execute serralheria-net-db --remote --file=./schema.sql
+
+      - name: Diagnóstico do primeiro acesso
+        run: npx --yes wrangler@latest d1 execute serralheria-net-db --remote --command="SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM sessions) AS sessions;"
+
+      - name: Publicar Worker
+        run: npx --yes wrangler@latest deploy
+
+      - name: Testar criação temporária do administrador
+        shell: bash
+        run: |
+          set +e
+          STATUS=$(curl -sS https://serralheria-net.professor100destino.workers.dev/api/status)
+          INIT=$(echo "$STATUS" | jq -r '.initialized // false')
+          if [ "$INIT" = "true" ]; then
+            echo "Sistema já inicializado; teste temporário não executado."
+            exit 0
+          fi
+          PROBE_USER="snet_probe_$(date +%s)"
+          PROBE_PASS="ProbePass-2026-$(date +%s)!"
+          BODY=$(jq -nc --arg u "$PROBE_USER" --arg p "$PROBE_PASS" '{username:$u,password:$p}')
+          OUT=$(mktemp)
+          CODE=$(curl -sS -o "$OUT" -w "%{http_code}" -X POST \
+            -H "content-type: application/json" \
+            --data "$BODY" \
+            https://serralheria-net.professor100destino.workers.dev/api/setup)
+          echo "HTTP $CODE"
+          jq '{ok,error,user:(.user // null)}' "$OUT" || cat "$OUT"
+          npx --yes wrangler@latest d1 execute serralheria-net-db --remote --command="DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE username LIKE 'snet_probe_%'); DELETE FROM users WHERE username LIKE 'snet_probe_%';" >/dev/null 2>&1
+          if [ "$CODE" != "200" ]; then
+            echo "FALHA_TESTE_PRIMEIRO_ACESSO"
+            exit 1
+          fi
+          echo "TESTE_PRIMEIRO_ACESSO_OK"

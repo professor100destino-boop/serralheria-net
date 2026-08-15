@@ -1,0 +1,53 @@
+name: Aplicar Serralheria Net V3
+
+on:
+  push:
+    branches: [secure-v2]
+    paths:
+      - '.github/workflows/apply-v3-upgrade.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Corrigir gerador V3
+        run: python3 scripts/fix-upgrade-v3-source.py
+      - name: Aplicar upgrade V3
+        run: python3 scripts/upgrade-v3.py
+      - name: Validar backend
+        run: node --check src/worker.js
+      - name: Validar JavaScript principal
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('index.html').read_text()
+          blocks=re.findall(r'<script>(.*?)</script>',s,re.S)
+          if not blocks: raise SystemExit('Nenhum script encontrado')
+          Path('/tmp/snet-main.js').write_text(max(blocks,key=len))
+          PY
+          node --check /tmp/snet-main.js
+      - name: Validar recursos V3
+        shell: bash
+        run: |
+          grep -q "user_access" src/worker.js
+          grep -q "accessProfiles" index.html
+          grep -q "assignedEmployeeId" index.html
+          grep -q "ownJobsOnly" index.html
+          grep -q "Módulos liberados" index.html
+      - name: Disparar publicação e salvar
+        shell: bash
+        run: |
+          printf 'deploy V3 %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > deploy-trigger.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/worker.js index.html schema.sql deploy-trigger.txt scripts/upgrade-v3.py
+          git commit -m 'Serralheria Net V3: perfis e permissões por funcionário'
+          git push
+# revalidação V3

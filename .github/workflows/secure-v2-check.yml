@@ -1,0 +1,13 @@
+name: Validar Serralheria Net Seguro
+
+on:
+  push:
+    branches: [secure-v2]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verificar sintaxe do Worker
+        run: node --check src/worker.js

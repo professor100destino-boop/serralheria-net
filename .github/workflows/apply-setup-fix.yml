@@ -1,0 +1,27 @@
+name: Ajustar autenticação para Workers Free
+
+on:
+  push:
+    branches: [secure-v2]
+    paths:
+      - '.github/workflows/apply-setup-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Ajustar PBKDF2
+        run: python3 scripts/tune-pbkdf2.py
+      - name: Validar Worker
+        run: node --check src/worker.js
+      - name: Salvar ajuste
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/worker.js
+          git commit -m 'Ajustar autenticação ao limite do Workers Free' || exit 0
+          git push

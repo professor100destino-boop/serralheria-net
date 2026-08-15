@@ -1,0 +1,11 @@
+.git*
+.github
+bootstrap
+src
+scripts
+schema.sql
+wrangler*.jsonc
+README.md
+SECURE-SETUP.md
+validation-trigger.txt
+.assetsignore
