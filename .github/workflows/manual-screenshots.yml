@@ -1,0 +1,56 @@
+name: Gerar telas para manual
+
+on:
+  push:
+    branches: [secure-v2]
+    paths:
+      - '.github/workflows/manual-screenshots.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Preparar páginas de captura
+        run: |
+          mkdir -p manual-pages manual-screens
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('index.html').read_text(encoding='utf-8')
+          pages=[
+            ('01-dashboard','dashboard',''),('02-clientes','clientes',''),('03-visitas','visitas',''),('04-orcamentos','orcamentos',''),
+            ('05-servicos','servicos',''),('06-producao','producao',''),('07-materiais-os','materiaisos',''),('08-corte','corte',''),
+            ('09-agenda','agenda',''),('10-garantias','garantias',''),('11-estoque','estoque',''),('12-compras','compras',''),
+            ('13-pdv','pdv',''),('14-receber','receber',''),('15-pagar','pagar',''),('16-caixa','caixa',''),
+            ('17-relatorios','relatorios',''),('18-configuracoes','config',''),
+            ('19-funcionario','config',"openEmployee()"),('20-os-responsavel','producao',"openJob()")
+          ]
+          for name,page,extra in pages:
+              addon=f"<script>setTimeout(()=>{{go('{page}');{extra}}},700)</script>"
+              html=src.replace('</body>',addon+'</body>')
+              Path('manual-pages',name+'.html').write_text(html,encoding='utf-8')
+          login='''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Entrar no Serralheria Net</title><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#15242d;font-family:Segoe UI,Arial,sans-serif;color:#18212b}.box{width:min(420px,92vw);background:#fff;border-radius:18px;padding:30px;box-shadow:0 24px 70px #0006}.brand{font-size:28px;font-weight:800;color:#1f4e5f}.sub{color:#677381;margin:6px 0 24px}.field{margin:14px 0}.field label{display:block;font-size:13px;font-weight:700;margin-bottom:6px}.field input{width:100%;padding:12px;border:1px solid #dfe4e8;border-radius:10px;font-size:16px}.btn{width:100%;border:0;border-radius:10px;padding:13px;background:#d98b2b;color:#15242d;font-weight:800;font-size:16px}</style></head><body><main class="box"><div class="brand">Serralheria Net</div><div class="sub">Acesso protegido</div><div class="field"><label>Usuário</label><input value="usuario"></div><div class="field"><label>Senha</label><input type="password" value="12345678"></div><button class="btn">Entrar</button></main></body></html>'''
+          Path('manual-pages','00-login.html').write_text(login,encoding='utf-8')
+          PY
+      - name: Iniciar servidor local
+        run: |
+          python3 -m http.server 8000 >/tmp/snet-http.log 2>&1 &
+          sleep 2
+      - name: Capturar telas
+        run: |
+          CHROME=$(command -v google-chrome || command -v chromium || command -v chromium-browser)
+          echo "Chrome: $CHROME"
+          for f in manual-pages/*.html; do
+            base=$(basename "$f" .html)
+            "$CHROME" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=1440,1000 --virtual-time-budget=2500 --screenshot="manual-screens/${base}.png" "http://127.0.0.1:8000/$f"
+          done
+          ls -lh manual-screens
+      - name: Publicar imagens do manual
+        uses: actions/upload-artifact@v4
+        with:
+          name: serralheria-net-manual-screens
+          path: manual-screens/*.png
+          retention-days: 2
