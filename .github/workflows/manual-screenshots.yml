@@ -49,11 +49,12 @@ jobs:
             "$CHROME" --headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=1440,1000 --virtual-time-budget=2500 --screenshot="manual-screens/${base}.png" "http://127.0.0.1:8000/$f"
           done
           test "$(find manual-screens -name '*.png' | wc -l)" -ge 21
+          echo "$GITHUB_RUN_ID" > manual-screens/RUN_ID.txt
       - name: Salvar capturas no branch
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -f manual-screens/*.png
+          git add -f manual-screens/*
           git commit -m 'Gerar capturas do manual Serralheria Net' || exit 0
           git push
       - name: Publicar imagens do manual
